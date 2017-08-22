@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# genjws
+# JSON Web Signatureを生成する
+#
+# https://github.com/m28dev/genjws.git
+
+set -eu
+umask 0077
+
+export LC_ALL='C' PATH="$(command -p getconf PATH):$PATH"
+
+# デバッグ用
+#homed=${HOME}
+#logfile=$homed/log/LOG.$(basename $0).$(date +%Y%m%d%H%M%S).$$
+#exec 2> $logfile
+#set -xv
+
+# 変数の定義
+tmp=/tmp/$$
+
+# ペイロードを用意
+sub='1234567890'
+name='John Doe'
+admin='true'
+cat << EOF > $tmp-raw-payload
+{
+  "sub": "${sub}",
+  "name": "${name}",
+  "admin": ${admin}
+}
+EOF
+
+# ヘッダ生成
+printf '{"alg":"RS256","typ":"JWT"}' |
+openssl enc -base64 > $tmp-header
+
+# ペイロード生成
+cat $tmp-raw-payload |
+# 空白をクリア
+sed 's/^ *//'        |
+sed 's/" *: */":/'   |
+# 改行をクリア
+tr -d '\n'           |
+# Base64urlエンコード
+openssl enc -base64  |
+tr '+/' '-_'         |
+tr -d '='            |
+tr -d '\n'           |
+sed 's/$/\n/' > $tmp-payload
+
+# 署名
+cat $tmp-header $tmp-payload  |
+tr '\n' '.'         |
+sed 's/\.$//'       |
+openssl dgst -sha256 -binary -sign private_key |
+openssl enc -base64 |
+tr '+/' '-_'        |
+tr -d '='           |
+tr -d '\n' > $tmp-signature
+
+# JWS出力
+cat $tmp-header $tmp-payload $tmp-signature | tr '\n' '.'
+
+# 終了処理
+rm -f $tmp-*
+exit 0
